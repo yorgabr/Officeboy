@@ -1,0 +1,18 @@
+[run]
+source = src/officeboy
+branch = True
+parallel = True
+concurrency = thread,multiprocessing
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    pass
+
+[html]
+directory = htmlcov

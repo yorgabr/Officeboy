@@ -1,0 +1,170 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "officeboy"
+version = "0.1.0"
+description = "MS Access Version Control and Automation CLI Tool"
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Yorga Babuscan", email = "yorgabr@gmail.com"}
+]
+keywords = ["msaccess", "vba", "version-control", "automation", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business",
+    "Topic :: Software Development :: Version Control",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0.0",
+    "pywin32>=306; platform_system=='Windows'",
+    "robotframework>=6.0",
+    "robotframework-flaui>=2.0",
+    "colorama>=0.4.6",
+    "tqdm>=4.65.0",
+    "pyyaml>=6.0",
+    "chardet>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.10",
+    "ruff>=0.1.0",
+    "bandit[toml]>=1.7",
+    "mypy>=1.0",
+    "build>=0.10",
+    "twine>=4.0",
+]
+packaging = [
+    "pyinstaller>=6.0",
+    "msix-packaging>=0.1",
+]
+
+[project.scripts]
+officeboy = "officeboy.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yorgabr/officeboy"
+Documentation = "https://github.com/yorgabr/officeboy#readme"
+Repository = "https://github.com/yorgabr/officeboy.git"
+Issues = "https://github.com/yorgabr/officeboy/issues"
+Changelog = "https://github.com/yorgabr/officeboy/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "src/officeboy/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/officeboy"]
+
+#__________ UV Configuration __________
+[tool.uv]
+managed = true
+
+[tool.uv.pip]
+generate-hashes = true
+
+#__________ Ruff Configuration __________
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+select = [
+    "E", "W", "F", "I", "N", "D", "UP", "B", "C4", "SIM", "TCH",
+]
+ignore = [
+    "D100",
+    "D104",
+]
+
+[tool.ruff.pydocstyle]
+convention = "google"
+
+[tool.ruff.per-file-ignores]
+"tests/*" = ["D", "S101"]
+
+#__________ MyPy Configuration __________
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["win32com.*", "win32com.client.*"]
+ignore_missing_imports = true
+
+#__________ Bandit Configuration __________
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101", "B601"]
+
+#__________ Pytest Configuration __________
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short",
+    "--cov=officeboy",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml:coverage.xml",
+    "--cov-fail-under=100",
+]
+markers = [
+    "unit: Unit tests",
+    "functional: Functional tests",
+    "integration: Integration tests",
+    "slow: Slow tests",
+    "windows: Windows-only tests",
+]
+
+#__________ Coverage Configuration __________
+[tool.coverage.run]
+source = ["src/officeboy"]
+branch = true
+parallel = true
+concurrency = ["thread", "multiprocessing"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "pass",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

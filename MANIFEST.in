@@ -1,0 +1,7 @@
+include LICENSE.md
+include README.md
+include CHANGELOG.md
+include CONTRIBUTING.md
+recursive-include src/officeboy/i18n *.po *.mo
+recursive-include src/officeboy/templates *.txt *.vba
+recursive-include docs *.md *.rst
