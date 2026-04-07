@@ -386,6 +386,114 @@ def make_functional_tests(
         )
         ctx.exit(1)
 
+@cli.command(name="create-migrations")
+@click.option(
+    "--from-version",
+    "-f",
+    required=True,
+    help=_("Source Git tag/version (e.g., v0.1.0)."),
+)
+@click.option(
+    "--to-version",
+    "-t",
+    required=True,
+    help=_("Target Git tag/version (e.g., v1.4.7)."),
+)
+@click.option(
+    "--backend-pattern",
+    "-p",
+    default="*_be.accdb",
+    help=_("Glob pattern to find backend Access files."),
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help=_("Output directory for migrations (default: auto-generated)."),
+)
+@click.option(
+    "--temp-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help=_("Temporary directory for operations (default: system temp)."),
+)
+@click.option(
+    "--keep-temp",
+    is_flag=True,
+    help=_("Keep temporary files after execution (for debugging)."),
+)
+@click.pass_context
+def create_migrations(
+    ctx: click.Context,
+    from_version: str,
+    to_version: str,
+    backend_pattern: str,
+    output_dir: Optional[Path],
+    temp_dir: Optional[Path],
+    keep_temp: bool,
+) -> None:
+    """Generate SQL migrations between two Git versions.
+    
+    Orchestrates Git, disassembly and assembly to compare two versions
+    of a backend Access database, generating DDL, DQL and DML statements
+    to migrate from --from-version to --to-version.
+    
+    The target database is the MS Access *_be.accdb file that was versioned
+    and tagged. Generated SQL is placed in:
+    .\\src\\<BE filename>\\migrations\\<from_version>_to_<to_version>
+    
+    \b
+    Example:
+        officeboy create-migrations --from-version "v0.1.0" --to-version "v1.4.7"
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(
+        _("Creating migrations from {from_ver} to {to_ver}").format(
+            from_ver=from_version,
+            to_ver=to_version,
+        )
+    )
+    
+    try:
+        generator = MigrationGenerator(
+            from_version=from_version,
+            to_version=to_version,
+            backend_pattern=backend_pattern,
+            output_dir=output_dir,
+            temp_dir=temp_dir,
+            keep_temp=keep_temp,
+        )
+        result = generator.generate()
+        
+        click.echo(
+            click.style(
+                _("Migrations generated successfully!"),
+                fg="green",
+                bold=True,
+            )
+        )
+        click.echo(_("Backend file: {be}").format(be=result.backend_name))
+        click.echo(_("Tables changed: {count}").format(count=len(result.table_changes)))
+        click.echo(_("Queries changed: {count}").format(count=len(result.query_changes)))
+        click.echo(_("Output directory: {dir}").format(dir=result.output_dir))
+        click.echo()
+        click.echo(_("Generated files:"))
+        for sql_file in result.sql_files:
+            click.echo(_("  - {file}").format(file=sql_file))
+        
+    except Exception as e:
+        logger.exception(_("Migration generation failed"))
+        click.echo(
+            click.style(
+                _("Error: {error}").format(error=str(e)),
+                fg="red",
+                bold=True,
+            ),
+            err=True,
+        )
+        ctx.exit(1)
+
 
 def main() -> None:
     """Entry point for the CLI."""
