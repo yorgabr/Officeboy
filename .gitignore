@@ -157,3 +157,4 @@ results/
 robot_output/
 bandit-report.json
 uv.lock
+RELEASE_NOTES*
