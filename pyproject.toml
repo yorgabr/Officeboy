@@ -141,10 +141,11 @@ addopts = [
     "--cov-fail-under=20",
 ]
 markers = [
-    "unit: Unit tests",
+    "unit: Fast unit tests",
     "functional: Functional tests",
-    "integration: Integration tests",
-    "slow: Slow tests",
+    "interface: Interface tests with mocked dependencies (no Access required)",
+    "integration: Integration tests requiring MS Access",
+    "slow: Tests that take longer to execute",
     "windows: Windows-only tests",
 ]
 
