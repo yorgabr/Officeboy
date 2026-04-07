@@ -1,17 +1,13 @@
 # Officeboy
 
-&lt;p align="center"&gt;
-  &lt;img src="./docs/images/the_officeboy.png" alt="Officeboy Mascot" width="300"&gt;
-&lt;/p&gt;
+![Officeboy Mascot](docs/images/the_officeboy.png)
 
-&lt;p align="center"&gt;
-  &lt;a href="https://www.gnu.org/licenses/gpl-3.0"&gt;&lt;img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3"&gt;&lt;/a&gt;
-  &lt;a href="https://www.python.org/downloads/"&gt;&lt;img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+"&gt;&lt;/a&gt;
-  &lt;a href="https://github.com/astral-sh/ruff"&gt;&lt;img src="https://img.shields.io/badge/code%20style-ruff-000000.svg" alt="Code style: ruff"&gt;&lt;/a&gt;
-  &lt;a href="./htmlcov"&gt;&lt;img src="https://img.shields.io/badge/coverage-100%25-brightgreen.svg" alt="Coverage"&gt;&lt;/a&gt;
-&lt;/p&gt;
+![License](https://img.shields.io/badge/License-GPLv3-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)
 
-Officeboy is a comprehensive command-line utility for MS Access database version control and automation. Inspired by the excellent [msaccess-vcs-addin](https://github.com/joyfullservice/msaccess-vcs-addin) project, Officeboy brings Git-friendly source control to MS Access applications with advanced testing capabilities.
+Officeboy is a comprehensive command-line utility for MS Access database version control and automation. Inspired by the amazing [msaccess-vcs-addin](https://github.com/joyfullservice/msaccess-vcs-addin) project, Officeboy brings Git-friendly source control to MS Access applications with advanced testing capabilities.
 
 ## Features
 
