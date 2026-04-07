@@ -1,516 +1,188 @@
-#!/usr/bin/env python3
-"""Command Line Interface for Officeboy.
-
-This module provides the main CLI entry point for the Officeboy tool,
-which handles MS Access database version control operations.
 """
-
-from __future__ import annotations
-
-import logging
-import os
+Rich CLI of Officeboy.
+"""
 import sys
 from pathlib import Path
 from typing import Optional
 
 import click
-from colorama import init as colorama_init
 
-from officeboy import __version__
-from officeboy.core.exporter import AccessExporter
-from officeboy.core.importer import AccessImporter
-from officeboy.generators.functional_tests import FunctionalTestGenerator
+from officeboy.core.disassembler import Disassembler, DisassemblyResult
+from officeboy.core.assembler import Assembler, AssemblyResult
 from officeboy.generators.unit_tests import UnitTestGenerator
-from officeboy.i18n import get_text as _
-
-# Initialize colorama for Windows color support
-colorama_init(autoreset=True)
+from officeboy.generators.functional_tests import FunctionalTestGenerator
 
 
-def setup_logging(verbose: bool = False) -> None:
-    """Configure logging for the application.
+class CLIContext:
+    """Context object holding dependencies for CLI commands."""
     
-    Args:
-        verbose: Enable verbose logging if True.
-    """
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    def __init__(
+        self,
+        disassembler_class=Disassembler,
+        assembler_class=Assembler,
+        unit_gen_class=UnitTestGenerator,
+        functional_gen_class=FunctionalTestGenerator
+    ):
+        self.disassembler_class = disassembler_class
+        self.assembler_class = assembler_class
+        self.unit_gen_class = unit_gen_class
+        self.functional_gen_class = functional_gen_class
 
 
-@click.group(invoke_without_command=True)
-@click.option(
-    "--version",
-    is_flag=True,
-    help=_("Show the version and exit."),
-)
-@click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    help=_("Enable verbose output."),
-)
+@click.group()
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
 @click.pass_context
-def cli(ctx: click.Context, version: bool, verbose: bool) -> None:
-    """Officeboy - MS Access Version Control and Automation Tool.
+def cli(ctx, verbose):
+    """Officeboy - MS Access Database Version Control Tool."""
+    ctx.ensure_object(dict)
+    ctx.obj['verbose'] = verbose
     
-    Export, import, and generate tests for MS Access databases
-    with Git-friendly source control integration.
-    """
-    setup_logging(verbose)
-    
-    if version:
-        click.echo(f"Officeboy version {__version__}")
-        ctx.exit(0)
-    
-    if ctx.invoked_subcommand is None:
-        click.echo(ctx.get_help())
-        ctx.exit(0)
+    if 'context' not in ctx.obj:
+        ctx.obj['context'] = CLIContext()
 
 
-@cli.command(name="disassembly")
-@click.argument(
-    "access_file",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
-@click.argument(
-    "source_dir",
-    type=click.Path(file_okay=False, path_type=Path),
-)
-@click.option(
-    "--force",
-    "-f",
-    is_flag=True,
-    help=_("Force export even if hashes match."),
-)
-@click.option(
-    "--encoding",
-    default="utf-8",
-    help=_("Output encoding for exported files."),
-)
+@cli.command()
+@click.argument('database', type=click.Path(exists=True, path_type=Path))
+@click.argument('output', type=click.Path(path_type=Path))
+@click.option('--force', '-f', is_flag=True, help='Force disassembly of all objects')
+@click.option('--index', type=click.Path(path_type=Path), help='Path to index file')
 @click.pass_context
-def disassembly(
-    ctx: click.Context,
-    access_file: Path,
-    source_dir: Path,
-    force: bool,
-    encoding: str,
-) -> None:
-    """Export MS Access objects to source directory.
+def disassemble(ctx, database: Path, output: Path, force: bool, index: Optional[Path]):
+    """Break down Access database into source files."""
+    context = ctx.obj['context']
+    verbose = ctx.obj['verbose']
     
-    Exports all objects (forms, reports, modules, queries, macros, tables)
-    from the specified Access database to the source directory.
-    Uses SHA-256 hashing to skip unchanged objects unless --force is used.
+    from officeboy.core.index import IndexManager
+    index_mgr = IndexManager(index) if index else None
     
-    \b
-    ACCESS_FILE: Path to the .accdb or .mdb file
-    SOURCE_DIR: Directory where source files will be exported
-    """
-    logger = logging.getLogger(__name__)
-    logger.info(_("Starting disassembly of {file}").format(file=access_file))
+    disassembler = context.disassembler_class(index_manager=index_mgr)
     
     try:
-        exporter = AccessExporter(
-            access_file=access_file,
-            source_dir=source_dir,
-            encoding=encoding,
-            force_export=force,
+        result = disassembler.disassemble(
+            database, 
+            output, 
+            force=force,
+            progress_callback=lambda name, cur, tot: click.echo(f"  {cur}/{tot}: {name}") if verbose else None
         )
-        stats = exporter.export_all()
         
-        click.echo(
-            click.style(
-                _("Export completed successfully!"),
-                fg="green",
-                bold=True,
-            )
-        )
-        click.echo(_("Exported {count} objects:").format(count=stats.total_exported))
-        click.echo(_("  - Forms: {forms}").format(forms=stats.forms))
-        click.echo(_("  - Reports: {reports}").format(reports=stats.reports))
-        click.echo(_("  - Modules: {modules}").format(modules=stats.modules))
-        click.echo(_("  - Queries: {queries}").format(queries=stats.queries))
-        click.echo(_("  - Macros: {macros}").format(macros=stats.macros))
-        click.echo(_("  - Tables: {tables}").format(tables=stats.tables))
-        click.echo(_("  - Skipped (unchanged): {skipped}").format(skipped=stats.skipped))
+        click.echo(f"Disassembly completed: {result.total_disassembled} objects")
+        click.echo(f"  Forms: {result.forms}, Reports: {result.reports}, Modules: {result.modules}")
+        click.echo(f"  Skipped: {result.skipped}")
+        
+        if result.errors:
+            click.echo(f"  Errors: {len(result.errors)}", err=True)
         
     except Exception as e:
-        logger.exception(_("Export failed"))
-        click.echo(
-            click.style(
-                _("Error: {error}").format(error=str(e)),
-                fg="red",
-                bold=True,
-            ),
-            err=True,
-        )
-        ctx.exit(1)
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        disassembler.close()
 
 
-@cli.command(name="assembly")
-@click.argument(
-    "source_dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-)
-@click.argument(
-    "access_file",
-    type=click.Path(dir_okay=False, path_type=Path),
-)
-@click.option(
-    "--overwrite",
-    "-o",
-    is_flag=True,
-    help=_("Overwrite existing database file."),
-)
-@click.option(
-    "--template",
-    "-t",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help=_("Template database to use as base."),
-)
+@cli.command()
+@click.argument('source', type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument('database', type=click.Path(path_type=Path))
+@click.option('--template', '-t', type=click.Path(exists=True, path_type=Path), help='Template database')
+@click.option('--overwrite', is_flag=True, help='Overwrite existing database')
 @click.pass_context
-def assembly(
-    ctx: click.Context,
-    source_dir: Path,
-    access_file: Path,
-    overwrite: bool,
-    template: Optional[Path],
-) -> None:
-    """Build MS Access database from source directory.
+def assemble(ctx, source: Path, database: Path, template: Optional[Path], overwrite: bool):
+    """Build Access database from source files."""
+    context = ctx.obj['context']
     
-    Reconstructs an Access database from exported source files.
-    Creates a new database or uses a template as base.
-    
-    \b
-    SOURCE_DIR: Directory containing exported source files
-    ACCESS_FILE: Path for the output .accdb or .mdb file
-    """
-    logger = logging.getLogger(__name__)
-    logger.info(_("Starting assembly of {file}").format(file=access_file))
-    
-    if access_file.exists() and not overwrite:
-        click.echo(
-            click.style(
-                _("Error: File exists. Use --overwrite to replace."),
-                fg="red",
-                bold=True,
-            ),
-            err=True,
-        )
-        ctx.exit(1)
-    
-    try:
-        importer = AccessImporter(
-            source_dir=source_dir,
-            access_file=access_file,
-            template=template,
-        )
-        stats = importer.import_all()
-        
-        click.echo(
-            click.style(
-                _("Assembly completed successfully!"),
-                fg="green",
-                bold=True,
-            )
-        )
-        click.echo(_("Imported {count} objects:").format(count=stats.total_imported))
-        click.echo(_("  - Forms: {forms}").format(forms=stats.forms))
-        click.echo(_("  - Reports: {reports}").format(reports=stats.reports))
-        click.echo(_("  - Modules: {modules}").format(modules=stats.modules))
-        click.echo(_("  - Queries: {queries}").format(queries=stats.queries))
-        click.echo(_("  - Macros: {macros}").format(macros=stats.macros))
-        click.echo(_("  - Tables: {tables}").format(tables=stats.tables))
-        
-    except Exception as e:
-        logger.exception(_("Assembly failed"))
-        click.echo(
-            click.style(
-                _("Error: {error}").format(error=str(e)),
-                fg="red",
-                bold=True,
-            ),
-            err=True,
-        )
-        ctx.exit(1)
-
-
-@cli.command(name="make-unit-tests")
-@click.argument(
-    "access_file",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(file_okay=False, path_type=Path),
-    default="./tests/unit",
-    help=_("Output directory for test files."),
-)
-@click.option(
-    "--addin-name",
-    "-n",
-    default="OfficeboyTests",
-    help=_("Name for the generated Access Add-in."),
-)
-@click.pass_context
-def make_unit_tests(
-    ctx: click.Context,
-    access_file: Path,
-    output: Path,
-    addin_name: str,
-) -> None:
-    """Generate unit test Add-in for MS Access database.
-    
-    Creates an MS Access Add-in containing test modules for each
-    code module in the database. Each public function and sub
-    gets at least one corresponding test method.
-    
-    \b
-    ACCESS_FILE: Path to the .accdb or .mdb file to analyze
-    """
-    logger = logging.getLogger(__name__)
-    logger.info(_("Generating unit tests for {file}").format(file=access_file))
-    
-    try:
-        generator = UnitTestGenerator(
-            access_file=access_file,
-            output_dir=output,
-            addin_name=addin_name,
-        )
-        stats = generator.generate()
-        
-        click.echo(
-            click.style(
-                _("Unit test Add-in generated successfully!"),
-                fg="green",
-                bold=True,
-            )
-        )
-        click.echo(
-            _("Created {modules} test modules with {tests} total tests").format(
-                modules=stats.module_count,
-                tests=stats.test_count,
-            )
-        )
-        click.echo(_("Output: {path}").format(path=output))
-        
-    except Exception as e:
-        logger.exception(_("Unit test generation failed"))
-        click.echo(
-            click.style(
-                _("Error: {error}").format(error=str(e)),
-                fg="red",
-                bold=True,
-            ),
-            err=True,
-        )
-        ctx.exit(1)
-
-
-@cli.command(name="make-functional-tests")
-@click.argument(
-    "access_file",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(file_okay=False, path_type=Path),
-    default="./tests/functional",
-    help=_("Output directory for Robot Framework tests."),
-)
-@click.option(
-    "--library",
-    "-l",
-    default="FlaUILibrary",
-    help=_("Robot Framework library to use."),
-)
-@click.pass_context
-def make_functional_tests(
-    ctx: click.Context,
-    access_file: Path,
-    output: Path,
-    library: str,
-) -> None:
-    """Generate functional tests for MS Access forms.
-    
-    Creates Robot Framework test specifications and Python scripts
-    to test all forms in the database. Automatically detects form
-    fields, buttons, and their Click event handlers.
-    
-    \b
-    ACCESS_FILE: Path to the .accdb or .mdb file to analyze
-    """
-    logger = logging.getLogger(__name__)
-    logger.info(_("Generating functional tests for {file}").format(file=access_file))
-    
-    try:
-        generator = FunctionalTestGenerator(
-            access_file=access_file,
-            output_dir=output,
-            library=library,
-        )
-        stats = generator.generate()
-        
-        click.echo(
-            click.style(
-                _("Functional tests generated successfully!"),
-                fg="green",
-                bold=True,
-            )
-        )
-        click.echo(
-            _("Created {specs} test specifications for {forms} forms").format(
-                specs=stats.spec_count,
-                forms=stats.form_count,
-            )
-        )
-        click.echo(
-            _("Total test cases: {cases}").format(cases=stats.test_case_count)
-        )
-        click.echo(_("Output: {path}").format(path=output))
-        
-    except Exception as e:
-        logger.exception(_("Functional test generation failed"))
-        click.echo(
-            click.style(
-                _("Error: {error}").format(error=str(e)),
-                fg="red",
-                bold=True,
-            ),
-            err=True,
-        )
-        ctx.exit(1)
-
-@cli.command(name="create-migrations")
-@click.option(
-    "--from-version",
-    "-f",
-    required=True,
-    help=_("Source Git tag/version (e.g., v0.1.0)."),
-)
-@click.option(
-    "--to-version",
-    "-t",
-    required=True,
-    help=_("Target Git tag/version (e.g., v1.4.7)."),
-)
-@click.option(
-    "--backend-pattern",
-    "-p",
-    default="*_be.accdb",
-    help=_("Glob pattern to find backend Access files."),
-)
-@click.option(
-    "--output-dir",
-    "-o",
-    type=click.Path(file_okay=False, path_type=Path),
-    default=None,
-    help=_("Output directory for migrations (default: auto-generated)."),
-)
-@click.option(
-    "--temp-dir",
-    type=click.Path(file_okay=False, path_type=Path),
-    default=None,
-    help=_("Temporary directory for operations (default: system temp)."),
-)
-@click.option(
-    "--keep-temp",
-    is_flag=True,
-    help=_("Keep temporary files after execution (for debugging)."),
-)
-@click.pass_context
-def create_migrations(
-    ctx: click.Context,
-    from_version: str,
-    to_version: str,
-    backend_pattern: str,
-    output_dir: Optional[Path],
-    temp_dir: Optional[Path],
-    keep_temp: bool,
-) -> None:
-    """Generate SQL migrations between two Git versions.
-    
-    Orchestrates Git, disassembly and assembly to compare two versions
-    of a backend Access database, generating DDL, DQL and DML statements
-    to migrate from --from-version to --to-version.
-    
-    The target database is the MS Access *_be.accdb file that was versioned
-    and tagged. Generated SQL is placed in:
-    .\\src\\<BE filename>\\migrations\\<from_version>_to_<to_version>
-    
-    \b
-    Example:
-        officeboy create-migrations --from-version "v0.1.0" --to-version "v1.4.7"
-    """
-    logger = logging.getLogger(__name__)
-    logger.info(
-        _("Creating migrations from {from_ver} to {to_ver}").format(
-            from_ver=from_version,
-            to_ver=to_version,
-        )
-    )
-    
-    try:
-        generator = MigrationGenerator(
-            from_version=from_version,
-            to_version=to_version,
-            backend_pattern=backend_pattern,
-            output_dir=output_dir,
-            temp_dir=temp_dir,
-            keep_temp=keep_temp,
-        )
-        result = generator.generate()
-        
-        click.echo(
-            click.style(
-                _("Migrations generated successfully!"),
-                fg="green",
-                bold=True,
-            )
-        )
-        click.echo(_("Backend file: {be}").format(be=result.backend_name))
-        click.echo(_("Tables changed: {count}").format(count=len(result.table_changes)))
-        click.echo(_("Queries changed: {count}").format(count=len(result.query_changes)))
-        click.echo(_("Output directory: {dir}").format(dir=result.output_dir))
-        click.echo()
-        click.echo(_("Generated files:"))
-        for sql_file in result.sql_files:
-            click.echo(_("  - {file}").format(file=sql_file))
-        
-    except Exception as e:
-        logger.exception(_("Migration generation failed"))
-        click.echo(
-            click.style(
-                _("Error: {error}").format(error=str(e)),
-                fg="red",
-                bold=True,
-            ),
-            err=True,
-        )
-        ctx.exit(1)
-
-
-def main() -> None:
-    """Entry point for the CLI."""
-    # Ensure we're on Windows
-    if os.name != "nt":
-        click.echo(
-            click.style(
-                _("Error: Officeboy requires Windows with MS Access."),
-                fg="red",
-                bold=True,
-            ),
-            err=True,
-        )
+    if database.exists() and not overwrite:
+        click.echo(f"Error: File exists. Use --overwrite to replace.", err=True)
         sys.exit(1)
     
-    cli()
+    assembler = context.assembler_class()
+    
+    try:
+        result = assembler.assemble(
+            source, 
+            database, 
+            template=template,
+            overwrite=overwrite
+        )
+        
+        click.echo(f"Assembly completed: {result.total_assembled} objects imported")
+        click.echo(f"  Forms: {result.forms}, Reports: {result.reports}, Modules: {result.modules}")
+        
+        if result.errors:
+            click.echo(f"  Errors: {len(result.errors)}", err=True)
+            
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        assembler.close()
 
 
-if __name__ == "__main__":
+@cli.command()
+@click.argument('database', type=click.Path(exists=True, path_type=Path))
+@click.option('--output', '-o', type=click.Path(path_type=Path), default='./tests', help='Output directory')
+@click.option('--addin-name', default='TestAddin', help='Name of test add-in')
+@click.pass_context
+def make_unit_tests(ctx, database: Path, output: Path, addin_name: str):
+    """Generate unit test add-in for database."""
+    context = ctx.obj['context']
+    generator = context.unit_gen_class()
+    
+    try:
+        result = generator.generate(database, output, addin_name=addin_name)
+        click.echo(f"Generated {result.test_count} tests in {result.module_count} modules")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('database', type=click.Path(exists=True, path_type=Path))
+@click.option('--output', '-o', type=click.Path(path_type=Path), default='./robot_tests', help='Output directory')
+@click.option('--library', '-l', default='FlaUILibrary', help='Robot Framework library')
+@click.pass_context
+def make_functional_tests(ctx, database: Path, output: Path, library: str):
+    """Generate Robot Framework tests for database."""
+    context = ctx.obj['context']
+    generator = context.functional_gen_class()
+    
+    try:
+        result = generator.generate(database, output, library=library)
+        click.echo(f"Generated {result.test_case_count} test cases for {result.form_count} forms")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+def version():
+    """Show version information."""
+    from officeboy import __version__
+    click.echo(f"Officeboy version {__version__}")
+
+
+# Backward compatibility aliases (optional - remove if not needed)
+@cli.command(name='export', hidden=True)
+@click.pass_context
+def export_alias(ctx, **kwargs):
+    """Alias for disassemble (deprecated)."""
+    click.echo("Warning: 'export' is deprecated, use 'disassemble' instead.", err=True)
+    ctx.forward(disassemble)
+
+
+@cli.command(name='import', hidden=True)
+@click.pass_context
+def import_alias(ctx, **kwargs):
+    """Alias for assemble (deprecated)."""
+    click.echo("Warning: 'import' is deprecated, use 'assemble' instead.", err=True)
+    ctx.forward(assemble)
+
+
+def main():
+    """Main entry point."""
+    if sys.platform != 'win32':
+        click.echo("Error: Officeboy requires Windows with MS Access", err=True)
+        sys.exit(1)
+    cli(obj={})
+
+
+if __name__ == '__main__':
     main()
