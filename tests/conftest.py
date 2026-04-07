@@ -1,48 +1,68 @@
-"""Pytest configuration and fixtures."""
-
+"""
+Pytest configuration - forces Access Simulator for stability.
+Avoids COM crashes from real MS Access in automated tests.
+"""
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Import simulator only
+from .access_simulator import AccessSimulator
 
-# Mock win32com for non-Windows platforms
-if sys.platform != "win32":
-    sys.modules["win32com"] = MagicMock()
-    sys.modules["win32com.client"] = MagicMock()
+
+def pytest_configure(config):
+    """Registers custom markers."""
+    config.addinivalue_line("markers", "integration: Integration tests using Access Simulator")
+    config.addinivalue_line("markers", "simulator: Tests for the simulator itself")
+
+
+@pytest.fixture(scope="function")
+def access_application():
+    """
+    Provides Access Simulator (never uses real Access to avoid COM crashes).
+    Function scope ensures clean state for each test.
+    """
+    app = AccessSimulator()
+    yield app
+    try:
+        app.Quit()
+    except:
+        pass
 
 
 @pytest.fixture
-def temp_dir(tmp_path):
-    """Provide temporary directory."""
-    return tmp_path
-
-
-@pytest.fixture
-def mock_access_app():
-    """Provide mocked Access application."""
-    with patch("officeboy.access.application.AccessApplication") as mock:
-        instance = MagicMock()
-        mock.return_value = instance
-        yield instance
+def temporary_database(tmp_path, access_application):
+    """Creates temporary database using simulator."""
+    db_path = tmp_path / "test_integration.accdb"
+    app = access_application
+    
+    try:
+        app.NewCurrentDatabase(str(db_path))
+        yield db_path
+    finally:
+        try:
+            app.CloseCurrentDatabase()
+            if db_path.exists():
+                db_path.unlink()
+        except:
+            pass
 
 
 @pytest.fixture
 def sample_access_file(tmp_path):
-    """Create sample Access file path."""
-    access_file = tmp_path / "test.accdb"
-    access_file.touch()
-    return access_file
+    """Creates empty .accdb file for tests."""
+    db_path = tmp_path / "sample.accdb"
+    import sqlite3
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE IF NOT EXISTS dummy (id INT)")
+    conn.commit()
+    conn.close()
+    return db_path
 
 
 @pytest.fixture
-def sample_source_dir(tmp_path):
-    """Create sample source directory structure."""
-    source_dir = tmp_path / "src"
-    
-    # Create subdirectories for object types
-    for obj_type in ["Forms", "Reports", "Modules", "Queries", "Macros", "Tables"]:
-        (source_dir / obj_type).mkdir(parents=True)
-    
-    return source_dir
+def cli_runner():
+    """Click CLI runner."""
+    from click.testing import CliRunner
+    return CliRunner()
