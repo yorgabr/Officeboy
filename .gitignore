@@ -156,3 +156,4 @@ officeboy.index.json
 results/
 robot_output/
 bandit-report.json
+uv.lock
