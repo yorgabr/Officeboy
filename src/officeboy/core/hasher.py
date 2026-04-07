@@ -1,62 +1,106 @@
-"""Hashing utilities for tracking object changes."""
-
+"""
+Hashing utilities for tracking file changes.
+"""
 import hashlib
+import json
 from pathlib import Path
-from typing import Union
+from typing import Optional, Dict, Iterator
 
 
-class ContentHasher:
-    """SHA-256 hasher for file content verification."""
+def calculate_hash(file_path: Path) -> str:
+    """
+    Calculate SHA-256 hash of file contents.
     
-    def __init__(self, block_size: int = 65536) -> None:
-        """Initialize hasher with specified block size.
+    Args:
+        file_path: Path to file
         
-        Args:
-            block_size: Size of blocks to read for large files.
+    Returns:
+        Hex digest of SHA-256 hash
+    """
+    sha256_hash = hashlib.sha256()
+    
+    with open(file_path, "rb") as f:
+        for byte_block in iter(lambda: f.read(8192), b""):
+            sha256_hash.update(byte_block)
+    
+    return sha256_hash.hexdigest()
+
+
+class HashIndex:
+    """
+    Index for tracking file hashes to detect changes.
+    """
+    
+    def __init__(self, index_file: Optional[Path] = None):
+        self.index_file = index_file
+        self.data: Dict[str, str] = {}
+        
+        if index_file:
+            self.load()
+    
+    def load(self) -> None:
+        """Load index from file."""
+        if not self.index_file or not self.index_file.exists():
+            self.data = {}
+            return
+        
+        try:
+            with open(self.index_file, 'r', encoding='utf-8') as f:
+                self.data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            self.data = {}
+    
+    def save(self) -> None:
+        """Save index to file."""
+        if not self.index_file:
+            return
+        
+        self.index_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(self.index_file, 'w', encoding='utf-8') as f:
+            json.dump(self.data, f, indent=2)
+    
+    def update(self, path: str, hash_value: str) -> None:
+        """Update hash for path."""
+        self.data[path] = hash_value
+    
+    def get(self, path: str) -> Optional[str]:
+        """Get hash for path."""
+        return self.data.get(path)
+    
+    def remove(self, path: str) -> None:
+        """Remove path from index."""
+        if path in self.data:
+            del self.data[path]
+    
+    def clear(self) -> None:
+        """Clear all entries."""
+        self.data.clear()
+    
+    def __contains__(self, path: str) -> bool:
+        return path in self.data
+    
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.data.keys())
+    
+    def __len__(self) -> int:
+        return len(self.data)
+    
+    def is_changed(self, path: str, current_hash: str) -> bool:
         """
-        self.block_size = block_size
-    
-    def hash_file(self, file_path: Union[str, Path]) -> str:
-        """Calculate SHA-256 hash of file contents.
+        Check if file has changed compared to stored hash.
         
-        Args:
-            file_path: Path to the file to hash.
-            
         Returns:
-            Hexadecimal string of the SHA-256 hash.
+            True if file is new or changed, False if unchanged
         """
-        sha256 = hashlib.sha256()
-        path = Path(file_path)
-        
-        with open(path, "rb") as f:
-            for block in iter(lambda: f.read(self.block_size), b""):
-                sha256.update(block)
-        
-        return sha256.hexdigest()
+        stored_hash = self.get(path)
+        if stored_hash is None:
+            return True
+        return stored_hash != current_hash
     
-    def hash_string(self, content: str, encoding: str = "utf-8") -> str:
-        """Calculate SHA-256 hash of string content.
-        
-        Args:
-            content: String content to hash.
-            encoding: Encoding to use for string conversion.
-            
-        Returns:
-            Hexadecimal string of the SHA-256 hash.
-        """
-        sha256 = hashlib.sha256()
-        sha256.update(content.encode(encoding))
-        return sha256.hexdigest()
-    
-    def verify_file(self, file_path: Union[str, Path], expected_hash: str) -> bool:
-        """Verify file matches expected hash.
-        
-        Args:
-            file_path: Path to the file to verify.
-            expected_hash: Expected SHA-256 hash.
-            
-        Returns:
-            True if hash matches, False otherwise.
-        """
-        actual_hash = self.hash_file(file_path)
-        return actual_hash.lower() == expected_hash.lower()
+    def get_stats(self) -> Dict:
+        """Get index statistics."""
+        return {
+            "total_files": len(self.data),
+            "index_file": str(self.index_file) if self.index_file else None
+        }

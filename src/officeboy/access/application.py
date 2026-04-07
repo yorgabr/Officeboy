@@ -201,3 +201,63 @@ def open_database(
         service.open_database(db_path)
     
     return service
+
+
+# Convenience functions for backward compatibility with tests
+
+def get_access_version() -> str:
+    """Get Access version (convenience function)."""
+    factory = Win32AccessAppFactory()
+    app = factory.create()
+    try:
+        return app.Version
+    finally:
+        app.Quit()
+
+
+def open_database(db_path: Path, create_new: bool = False):
+    """
+    Open database and return service (convenience function).
+    
+    Returns:
+        AccessApplicationService instance
+    """
+    factory = Win32AccessAppFactory()
+    service = AccessApplicationService(factory.create())
+    
+    if create_new:
+        service.open_database(db_path, create_new=True)
+    else:
+        service.open_database(db_path)
+    
+    return service
+
+
+def close_database(service: AccessApplicationService) -> None:
+    """Close database service (convenience function)."""
+    service.close()
+
+
+def export_form(app, name: str, output_path: Path) -> bool:
+    """Export form (convenience function)."""
+    return app.SaveAsText(2, name, str(output_path))
+
+
+def export_report(app, name: str, output_path: Path) -> bool:
+    """Export report (convenience function)."""
+    return app.SaveAsText(5, name, str(output_path))
+
+
+def export_module(app, name: str, output_path: Path) -> bool:
+    """Export module (convenience function)."""
+    return app.SaveAsText(10, name, str(output_path))
+
+
+def export_query(app, name: str, output_path: Path) -> bool:
+    """Export query (convenience function)."""
+    return app.SaveAsText(1, name, str(output_path))
+
+
+def export_table(app, name: str, output_path: Path) -> bool:
+    """Export table (convenience function)."""
+    return app.SaveAsText(6, name, str(output_path))

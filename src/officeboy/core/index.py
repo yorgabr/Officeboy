@@ -1,170 +1,120 @@
-"""Index management for tracking exported objects."""
-
+"""
+Index management for tracking database objects.
+"""
 import json
-import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, Optional
-
-from officeboy.core.hasher import ContentHasher
-
-logger = logging.getLogger(__name__)
+from typing import Optional, Dict, List, Any
+from datetime import datetime
 
 
 @dataclass
-class ObjectEntry:
-    """Entry for a single exported object."""
-    
-    name: str
-    object_type: str
-    file_path: str
+class IndexEntry:
+    """Entry in the database index."""
+    path: str
     hash: str
-    last_modified: str
     size: int
-
-
-@dataclass
-class ExportIndex:
-    """Index of all exported objects."""
+    modified: float
+    object_type: str
     
-    version: str = "1.0"
-    database_path: str = ""
-    entries: Dict[str, ObjectEntry] = field(default_factory=dict)
-    
-    def to_dict(self) -> dict:
-        """Convert index to dictionary."""
-        return {
-            "version": self.version,
-            "database_path": self.database_path,
-            "entries": {
-                k: asdict(v) for k, v in self.entries.items()
-            },
-        }
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return asdict(self)
     
     @classmethod
-    def from_dict(cls, data: dict) -> "ExportIndex":
-        """Create index from dictionary."""
-        entries = {
-            k: ObjectEntry(**v) for k, v in data.get("entries", {}).items()
-        }
-        return cls(
-            version=data.get("version", "1.0"),
-            database_path=data.get("database_path", ""),
-            entries=entries,
-        )
+    def from_dict(cls, data: Dict[str, Any]) -> 'IndexEntry':
+        """Create from dictionary."""
+        return cls(**data)
 
 
 class IndexManager:
-    """Manages the export index file."""
+    """Manages index of exported database objects."""
     
-    INDEX_FILENAME = "officeboy.index.json"
+    def __init__(self, index_file: Optional[Path] = None):
+        self.index_file = index_file or Path(".officeboy/index.json")
+        self.entries: Dict[str, IndexEntry] = {}
+        self.load()
     
-    def __init__(self, source_dir: Path) -> None:
-        """Initialize index manager.
+    def load(self) -> None:
+        """Load index from file."""
+        if not self.index_file.exists():
+            self.entries = {}
+            return
         
-        Args:
-            source_dir: Directory containing exported sources.
-        """
-        self.source_dir = Path(source_dir)
-        self.index_path = self.source_dir / self.INDEX_FILENAME
-        self.index: ExportIndex = ExportIndex()
-        self.hasher = ContentHasher()
-        self._load_index()
+        try:
+            with open(self.index_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                self.entries = {
+                    k: IndexEntry.fromdict(v) if isinstance(v, dict) else v
+                    for k, v in data.items()
+                }
+        except (json.JSONDecodeError, IOError):
+            self.entries = {}
     
-    def _load_index(self) -> None:
-        """Load existing index if present."""
-        if self.index_path.exists():
-            try:
-                with open(self.index_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                self.index = ExportIndex.from_dict(data)
-                logger.debug(_("Loaded existing index with {count} entries").format(
-                    count=len(self.index.entries)
-                ))
-            except (json.JSONDecodeError, KeyError, TypeError) as e:
-                logger.warning(_("Failed to load index: {error}").format(error=e))
-                self.index = ExportIndex()
+    def save(self) -> None:
+        """Save index to file."""
+        self.index_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(self.index_file, 'w', encoding='utf-8') as f:
+            json.dump(
+                {k: v.to_dict() if hasattr(v, 'to_dict') else v 
+                 for k, v in self.entries.items()},
+                f,
+                indent=2
+            )
     
-    def save_index(self) -> None:
-        """Save current index to disk."""
-        self.source_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.index_path, "w", encoding="utf-8") as f:
-            json.dump(self.index.to_dict(), f, indent=2)
-        logger.debug(_("Saved index with {count} entries").format(
-            count=len(self.index.entries)
-        ))
-    
-    def get_entry(self, object_name: str, object_type: str) -> Optional[ObjectEntry]:
-        """Get index entry for an object.
+    def add(self, path: str, output_dir: str, hash_value: Optional[str] = None) -> None:
+        """Add entry to index."""
+        from officeboy.core.hasher import calculate_hash
         
-        Args:
-            object_name: Name of the object.
-            object_type: Type of the object (Form, Module, etc.).
-            
-        Returns:
-            ObjectEntry if found, None otherwise.
-        """
-        key = f"{object_type}:{object_name}"
-        return self.index.entries.get(key)
-    
-    def has_changed(self, object_name: str, object_type: str, 
-                    content: str) -> bool:
-        """Check if object content has changed from indexed version.
+        path_obj = Path(path)
         
-        Args:
-            object_name: Name of the object.
-            object_type: Type of the object.
-            content: Current content of the object.
-            
-        Returns:
-            True if content has changed or not indexed, False otherwise.
-        """
-        entry = self.get_entry(object_name, object_type)
-        if entry is None:
-            return True
+        if path_obj.exists():
+            size = path_obj.stat().st_size
+            modified = path_obj.stat().st_mtime
+            hash_val = hash_value or calculate_hash(path_obj)
+        else:
+            size = 0
+            modified = datetime.now().timestamp()
+            hash_val = hash_value or ""
         
-        current_hash = self.hasher.hash_string(content)
-        return current_hash != entry.hash
-    
-    def update_entry(self, object_name: str, object_type: str,
-                     file_path: Path, content: str) -> None:
-        """Update or add index entry for an object.
-        
-        Args:
-            object_name: Name of the object.
-            object_type: Type of the object.
-            file_path: Path where object is exported.
-            content: Content of the object.
-        """
-        from datetime import datetime
-        
-        key = f"{object_type}:{object_name}"
-        hash_value = self.hasher.hash_string(content)
-        
-        self.index.entries[key] = ObjectEntry(
-            name=object_name,
-            object_type=object_type,
-            file_path=str(file_path.relative_to(self.source_dir)),
-            hash=hash_value,
-            last_modified=datetime.now().isoformat(),
-            size=len(content.encode("utf-8")),
+        self.entries[path] = IndexEntry(
+            path=path,
+            hash=hash_val,
+            size=size,
+            modified=modified,
+            object_type="database"
         )
     
-    def remove_entry(self, object_name: str, object_type: str) -> None:
-        """Remove entry from index.
-        
-        Args:
-            object_name: Name of the object.
-            object_type: Type of the object.
-        """
-        key = f"{object_type}:{object_name}"
-        if key in self.index.entries:
-            del self.index.entries[key]
+    def get(self, path: str) -> Optional[IndexEntry]:
+        """Get entry by path."""
+        return self.entries.get(path)
     
-    def get_all_entries(self) -> Dict[str, ObjectEntry]:
-        """Get all index entries.
-        
-        Returns:
-            Dictionary of all entries keyed by type:name.
-        """
-        return self.index.entries.copy()
+    def remove(self, path: str) -> None:
+        """Remove entry."""
+        if path in self.entries:
+            del self.entries[path]
+    
+    def has_changed(self, path: str, current_hash: str) -> bool:
+        """Check if path has different hash."""
+        entry = self.get(path)
+        if entry is None:
+            return True
+        return entry.hash != current_hash
+    
+    def get_all_paths(self) -> List[str]:
+        """Get all tracked paths."""
+        return list(self.entries.keys())
+    
+    def clear(self) -> None:
+        """Clear all entries."""
+        self.entries.clear()
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get index statistics."""
+        total_size = sum(e.size for e in self.entries.values())
+        return {
+            "total_entries": len(self.entries),
+            "total_size": total_size,
+            "index_file": str(self.index_file)
+        }
