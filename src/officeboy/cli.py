@@ -159,23 +159,6 @@ def version():
     click.echo(f"Officeboy version {__version__}")
 
 
-# Backward compatibility aliases (optional - remove if not needed)
-@cli.command(name='export', hidden=True)
-@click.pass_context
-def export_alias(ctx, **kwargs):
-    """Alias for disassemble (deprecated)."""
-    click.echo("Warning: 'export' is deprecated, use 'disassemble' instead.", err=True)
-    ctx.forward(disassemble)
-
-
-@cli.command(name='import', hidden=True)
-@click.pass_context
-def import_alias(ctx, **kwargs):
-    """Alias for assemble (deprecated)."""
-    click.echo("Warning: 'import' is deprecated, use 'assemble' instead.", err=True)
-    ctx.forward(assemble)
-
-
 def main():
     """Main entry point."""
     if sys.platform != 'win32':
